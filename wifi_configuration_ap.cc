@@ -288,19 +288,51 @@ void WifiConfigurationAp::Save(const std::string &ssid, const std::string &passw
     ESP_ERROR_CHECK(nvs_open("wifi", NVS_READWRITE, &nvs_handle));
 
     // Write the SSID and password to the NVS flash
-    ESP_ERROR_CHECK(nvs_set_str(nvs_handle, "ssid", ssid.c_str()));
-    ESP_ERROR_CHECK(nvs_set_str(nvs_handle, "password", password.c_str()));
+    uint8_t wifi_flag = 0;
+    int32_t connect_cnt = 65535;
+    int re_num = 0;
+    for (int num = 0; num < 3; num++) {
+        std::string wifi_flag_key = std::string("wifi_flag") + std::to_string(num);
+        ESP_ERROR_CHECK(nvs_get_u8(nvs_handle, wifi_flag_key.c_str(), &wifi_flag));
+        if (wifi_flag == true) {
+            int32_t connect_cnt_temp = 0;
+            std::string con_cnt = std::string("connect_cnt") + std::to_string(num);
+            ESP_ERROR_CHECK(nvs_get_i32(nvs_handle, con_cnt.c_str(), &connect_cnt_temp));
+            if (connect_cnt_temp <= connect_cnt) {
+                re_num = num;
+                connect_cnt = connect_cnt_temp;
+            }
+            std::string ssid_key = std::string("ssid") + std::to_string(num);
+            size_t length = 32;
+            char ssid_str[length];
+            ESP_ERROR_CHECK(nvs_get_str(nvs_handle, ssid_key.c_str(), ssid_str, &length));
+            if (strcmp(ssid_str, ssid.c_str()) == 0) {
+                re_num = num;
+                break;
+            } 
+        } else {
+            re_num = num;
+            break;
+        }
+    }
+    std::string wifi_flag_key = std::string("wifi_flag") + std::to_string(re_num);
+    std::string ssid_key = std::string("ssid") + std::to_string(re_num);
+    std::string psw_key = std::string("psw") + std::to_string(re_num);
 
+    ESP_ERROR_CHECK(nvs_set_u8(nvs_handle, wifi_flag_key.c_str(), 1));
+    ESP_ERROR_CHECK(nvs_commit(nvs_handle));
+    ESP_ERROR_CHECK(nvs_set_str(nvs_handle, ssid_key.c_str(), ssid.c_str()));
+    ESP_ERROR_CHECK(nvs_commit(nvs_handle));
+    ESP_ERROR_CHECK(nvs_set_str(nvs_handle, psw_key.c_str(), password.c_str())); 
     // Commit the changes
     ESP_ERROR_CHECK(nvs_commit(nvs_handle));
-
     // Close the NVS flash
     nvs_close(nvs_handle);
 
-    ESP_LOGI(TAG, "WiFi configuration saved");
+    ESP_LOGI(TAG, "WiFi configuration saved %d:   ssid:%s  password:%s", re_num, ssid.c_str(), password.c_str());
     // Use xTaskCreate to create a new task that restarts the ESP32
     xTaskCreate([](void *ctx) {
-        ESP_LOGI(TAG, "Restarting the ESP32 in 3 second");
+        ESP_LOGW(TAG, "Restarting the ESP32 in 3 second");
         vTaskDelay(pdMS_TO_TICKS(3000));
         esp_restart();
     }, "restart_task", 4096, NULL, 5, NULL);
